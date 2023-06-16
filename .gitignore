@@ -1,0 +1,5 @@
+/target
+/.minecraft
+/logs
+settings.json
+Cargo.lock
