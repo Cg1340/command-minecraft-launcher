@@ -1,6 +1,6 @@
+use crate::downloader::downloader;
 use crate::get_path;
 use crate::write_to_file;
-use futures::StreamExt;
 use reqwest::Error;
 use serde_json::Value;
 use std::borrow::Borrow;
@@ -9,10 +9,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::thread;
-use tokio::runtime::Runtime;
 
 const VERSION_MANIFEST_URL: &str = "https://bmclapi2.bangbang93.com/mc/game/version_manifest.json";
 const _DOWNLOAD_THREAD_MAX: usize = 256;
@@ -298,8 +294,6 @@ impl DownloadManager {
             }
         }
 
-        println!("完成1");
-
         // ----- assets.json ----- //
 
         println!("正在获取 assets.json... ");
@@ -334,71 +328,18 @@ impl DownloadManager {
                     /* url  */
                     format!("https://resources.download.minecraft.net/{}/{}", two, hash),
                 ));
-            } else {
-                println!(
-                    "文件 {} 已存在, 跳过",
-                    format!("https://resources.download.minecraft.net/{}/{}", two, hash)
-                );
             }
         }
-        println!("完成2");
 
-        // ----- download ----- //
-        println!("需要下载的文件总数: {}", urls.len());
-        // 准备下载链接和线程数等参数
+	// ----- download ----- //
 
-        let n = 16; // 分成4份
+	for url in urls {
+	    let runtime = tokio::runtime::Builder::new_multi_thread()
+		.enable_all()
+		.build().unwrap();
 
-        let shared_data = Arc::new(Mutex::new(urls));
-
-        let mut handles = vec![];
-
-        for _ in 0..n {
-            let shared_data = Arc::clone(&shared_data);
-            let handle = thread::spawn(move || {
-                let mut data = shared_data.lock().unwrap();
-
-                // 例如，将data拆分的每一份传递给不同的线程进行处理
-                // 注意：这里只是一个示例，具体的操作取决于你的需求
-                let chunk_size = data.len() / n;
-                let thread_data = data.split_off(chunk_size);
-
-                let rt = Runtime::new().unwrap();
-                rt.block_on(async {
-                    let fetches = futures::stream::iter(thread_data.into_iter().map(
-                        |(path, url)| async move {
-                            loop {
-                                match reqwest::get(&url).await {
-                                    Ok(resp) => match resp.bytes().await {
-                                        Ok(text) => {
-                                            println!("{} 下载完成", url);
-                                            write_to_file(&path, &text);
-                                            break;
-                                        }
-                                        Err(_) => {
-                                            println!("{} 在读取时发生错误", url);
-                                            continue;
-                                        }
-                                    },
-                                    Err(_) => {
-                                        println!("{} 在下载时发生错误", url);
-                                        continue;
-                                    }
-                                }
-                            }
-                        },
-                    ))
-                    .buffer_unordered(65535)
-                    .collect::<Vec<()>>();
-                    fetches.await;
-                });
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            handle.join().unwrap();
-        }
+	    runtime.block_on(downloader::download(&url.0, &url.1));
+	}
 
         Ok(())
     }
@@ -677,17 +618,3 @@ impl Launcher {
     }
 }
 
-/// 镜像源设置
-pub struct MirrorSourceOptions {
-    // 版本信息
-    pub version_manifest: String,
-    // 版本和版本 JSON 以及 AssetsIndex
-    pub version_and_assets_index_from: String,
-    pub version_and_assets_index_to: String,
-    // Assets
-    pub assets_from: String,
-    pub assets_to: String,
-    // Libraries
-    pub lib_from: String,
-    pub lib_to: String,
-}

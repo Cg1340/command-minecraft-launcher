@@ -23,8 +23,6 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 futures = "0.3.4"
-downloader = "0.2.7"
-download-async = "0.10.9"
 anyhow = "1.0.68"
 colored = "2.0.0"
 zip = "0.6.4"
@@ -33,6 +31,8 @@ zstd = "0.12.3"
 chrono = "0.4.23"
 regex = "1.8.4"
 lazy_static = "1.4.0"
+url = { version = "2" }
+http-downloader = { version = "0.3.2", features = ["status-tracker", "speed-limiter", "speed-tracker", "breakpoint-resume", "tracing", "bson-file-archiver"] }
 
 
 [dependencies.uuid]
