@@ -1,5 +1,9 @@
 use std::sync::Mutex;
 
+use command_minecraft_launcher::{
+    generate_uuid_without_hyphens,
+    minecraft_core::{DownloadManager, GameVersion, LaunchInfo, Launcher},
+};
 use cursive::{
     view::{Nameable, Resizable, Scrollable},
     views::{Button, Checkbox, Dialog, EditView, LinearLayout, SelectView, TextView},
@@ -7,8 +11,6 @@ use cursive::{
 };
 use lazy_static::lazy_static;
 use regex::Regex;
-use command_minecraft_launcher::{minecraft_core::{DownloadManager, GameVersion, Launcher, LaunchInfo}, generate_uuid_without_hyphens};
-
 
 lazy_static! {
     static ref NIGANMA: Mutex<u32> = Mutex::new(42);
@@ -93,7 +95,7 @@ fn dialog_main() -> Dialog {
                                 .child(
                                     EditView::new()
                                         .with_name("edit_version_name")
-                                        .fixed_width(10)
+                                        .fixed_width(10),
                                 ),
                         )
                         .child(
@@ -121,7 +123,13 @@ fn dialog_main() -> Dialog {
 
                     let player_name = PLAYER_NAME.lock().unwrap().to_string();
 
-                    let info = LaunchInfo { player_name: player_name.clone(), uuid: generate_uuid_without_hyphens(&player_name), version: String::from(""), name, demo };
+                    let info = LaunchInfo {
+                        player_name: player_name.clone(),
+                        uuid: generate_uuid_without_hyphens(&player_name),
+                        version: String::from(""),
+                        name,
+                        demo,
+                    };
 
                     match launcher.start(info) {
                         Ok(_) => {

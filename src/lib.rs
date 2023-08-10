@@ -1,9 +1,9 @@
 use chrono::{DateTime, Local};
 use colored::Colorize;
-use uuid::Uuid;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::str;
+use uuid::Uuid;
 use zip::read::ZipArchive;
 
 pub mod downloader;

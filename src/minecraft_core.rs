@@ -1,14 +1,22 @@
 use crate::downloader::downloader;
 use crate::get_path;
 use crate::write_to_file;
+use crossterm::cursor;
+use crossterm::terminal::Clear;
+use crossterm::terminal::ClearType;
+use crossterm::ExecutableCommand;
+use indicatif::ProgressBar;
 use reqwest::Error;
 use serde_json::Value;
 use std::borrow::Borrow;
 use std::fs::create_dir_all;
+use std::io::stdout;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 const VERSION_MANIFEST_URL: &str = "https://bmclapi2.bangbang93.com/mc/game/version_manifest.json";
 const _DOWNLOAD_THREAD_MAX: usize = 256;
@@ -79,6 +87,12 @@ impl DownloadManager {
     }
 
     pub fn download_version(&self, version_id: &str, name: &str) -> Result<(), String> {
+        let _ = crossterm::terminal::enable_raw_mode();
+        let mut stdout = stdout();
+        let _ = stdout.execute(Clear(ClearType::All));
+        let _ = stdout.execute(cursor::MoveTo(0, 0));
+        let _ = crossterm::terminal::disable_raw_mode();
+
         let version_manifest = match reqwest::blocking::get(VERSION_MANIFEST_URL) {
             Ok(result) => match result.text() {
                 Ok(result) => result,
@@ -87,7 +101,10 @@ impl DownloadManager {
             Err(err) => return Err(err.to_string()),
         };
 
-        let version_manifest_json: Value = serde_json::from_str(&version_manifest).unwrap();
+        let version_manifest_json: Value = match serde_json::from_str(&version_manifest) {
+            Ok(result) => result,
+            Err(err) => return Err(err.to_string()),
+        };
         // {
         //     "latest": {
         //         "release": "1.19",
@@ -296,8 +313,6 @@ impl DownloadManager {
 
         // ----- assets.json ----- //
 
-        println!("正在获取 assets.json... ");
-
         let assets =
             match reqwest::blocking::get(version_json["assetIndex"]["url"].as_str().expect("ERR!"))
             {
@@ -331,15 +346,39 @@ impl DownloadManager {
             }
         }
 
-	// ----- download ----- //
+        // ----- download ----- //
+        let size = urls.len();
+        let urls = Arc::new(Mutex::new(urls));
+        let progress_bar = Arc::new(Mutex::new(ProgressBar::new(size.try_into().unwrap())));
+        let mut handles = vec![];
 
-	for url in urls {
-	    let runtime = tokio::runtime::Builder::new_multi_thread()
-		.enable_all()
-		.build().unwrap();
+        for _ in 0..size {
+            let urls = urls.clone();
+            let progress_bar = progress_bar.clone();
+            let handle = thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
 
-	    runtime.block_on(downloader::download(&url.0, &url.1));
-	}
+                let mut urls = urls.lock().unwrap();
+                let url = urls[0].clone();
+                urls.remove(0);
+
+                let progress_bar = progress_bar.lock().unwrap();
+
+                runtime.block_on(downloader::download(&url.0, &url.1));
+
+                progress_bar.inc(1);
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        progress_bar.clone().lock().unwrap().finish();
 
         Ok(())
     }
@@ -617,4 +656,3 @@ impl Launcher {
         }
     }
 }
-
