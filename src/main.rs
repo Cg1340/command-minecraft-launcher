@@ -1,8 +1,8 @@
-use std::sync::Mutex;
-
+use colored::Colorize;
 use command_minecraft_launcher::{
     generate_uuid_without_hyphens,
-    minecraft_core::{DownloadManager, GameVersion, LaunchInfo, Launcher},
+    minecraft_core::{DownloadManager, GameVersion, LaunchInfo, Launcher, Login},
+    post::Post,
 };
 use cursive::{
     view::{Nameable, Resizable, Scrollable},
@@ -11,11 +11,16 @@ use cursive::{
 };
 use lazy_static::lazy_static;
 use regex::Regex;
+use reqwest::header::HeaderMap;
+use serde_json::{json, Value};
+use std::{collections::HashMap, sync::Mutex};
 
 lazy_static! {
     static ref NIGANMA: Mutex<u32> = Mutex::new(42);
     static ref PLAYER_NAME: Mutex<String> = Mutex::new(String::new());
 }
+
+const LOGIN_SUPER_LINK: &str = "https://login.live.com/oauth20_authorize.srf?client_id=00000000402b5328&response_type=code&scope=service%3A%3Auser.auth.xboxlive.com%3A%3AMBI_SSL&redirect_uri=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf";
 
 fn dialog_error(content: &str) -> Dialog {
     Dialog::new()
@@ -162,17 +167,119 @@ fn dialog_main() -> Dialog {
         )
     };
 
+    let login = Dialog::new()
+        .title("步骤 1")
+        .content(TextView::new(&format!("用浏览器打开 {}", LOGIN_SUPER_LINK)))
+        .button("下一步", move |siv| {
+            siv.pop_layer();
+            siv.add_layer(
+                Dialog::new()
+                    .title("步骤 2")
+                    .content(
+                        LinearLayout::vertical()
+                            .child(TextView::new(
+                                "现在在重定向的链接中提取出 code 的参数并写在下面的输入框中",
+                            ))
+                            .child(EditView::new().with_name("edit_login_code")),
+                    )
+                    .button("确定", |siv| {
+                        let code = match siv
+                            .call_on_name("edit_login_code", |view: &mut EditView| {
+                                (*view.get_content()).clone()
+                            }) {
+                            Some(result) => result,
+                            None => String::new(),
+                        };
+
+                        let poster = Post::new();
+
+                        let mut headers = HeaderMap::new();
+                        headers.insert(
+                            "Content-Type",
+                            "application/x-www-form-urlencoded".parse().unwrap(),
+                        );
+
+                        let data = json!({
+                            "client_id": "00000000402b5328",
+                            "code": &code,
+                            "grant_type": "authorization_code",
+                            "redirect_uri": "https://login.live.com/oauth20_desktop.srf",
+                            "scope": "service::user.auth.xboxlive.com::MBI_SSL",
+                        });
+
+                        let runtime = tokio::runtime::Builder::new_multi_thread()
+                            .enable_all()
+                            .build()
+                            .unwrap();
+
+                        match runtime.block_on(poster.post(
+                            "https://login.live.com/oauth20_token.srf",
+                            headers,
+                            data.to_string(),
+                        )) {
+                            Ok(_) => (),
+                            Err(err) => {
+                                siv.add_layer(dialog_error(&err.to_string()));
+                                siv.pop_layer();
+                                return;
+                            }
+                        };
+
+                        let response = poster.get("https://login.live.com/oauth20_token.srf");
+
+                        let response = match runtime.block_on(response) {
+                            Ok(result) => result,
+                            Err(err) => {
+                                siv.add_layer(dialog_error(&err.to_string()));
+                                siv.pop_layer();
+                                return;
+                            }
+                        };
+                    }),
+            );
+        });
+
+    let login = move |siv: &mut Cursive| {
+        siv.add_layer(
+            Dialog::new()
+                .content(TextView::new("注意: 现已不再支持 Mojang 登录!"))
+                .button("从微软登录", |siv| {
+                    siv.add_layer(
+                        Dialog::new()
+                            .title("Step.1")
+                            .content(TextView::new(&format!(
+                                "用你的浏览器打开 {}",
+                                LOGIN_SUPER_LINK
+                            )))
+                            .button("下一步", |siv| {
+                                siv.pop_layer();
+                                siv.add_layer(Dialog::new());
+                            }),
+                    );
+                })
+                .button("离线游戏", |siv| {
+                    siv.add_layer(
+                        Dialog::new().title("Input").content(
+                            LinearLayout::vertical()
+                                .child(TextView::new("你的名字: "))
+                                .child(EditView::new()),
+                        ),
+                    );
+                }),
+        )
+    };
+
     // return //
     Dialog::new().title("Main").content(
         LinearLayout::horizontal()
             .child(
                 LinearLayout::vertical()
-                    .child(TextView::new("玩家名").center())
                     .child(
                         LinearLayout::horizontal()
-                            .child(Button::new("更改名字", change_name))
+                            .child(TextView::new("玩家名 "))
                             .child(TextView::new("").with_name("player_name")),
-                    ),
+                    )
+                    .child(Button::new("登录...", login)),
             )
             .child(
                 LinearLayout::vertical()
@@ -290,8 +397,16 @@ fn dialog_main() -> Dialog {
 }
 
 fn main() {
-    let mut cursive_main = Cursive::default();
-    cursive_main.set_fps(30);
-    cursive_main.add_layer(dialog_main());
-    cursive_main.run();
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+
+    runtime.block_on(Login::login_from_microsoft(String::from("M.C103_BAY.2.0c333741-6c50-ed27-46c1-050fc992fd83")));
+
+    // let mut cursive_main = Cursive::default();
+    // cursive_main.set_fps(30);
+    // cursive_main.add_layer(dialog_main());
+    // cursive_main.run();
 }

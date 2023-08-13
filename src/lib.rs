@@ -6,6 +6,7 @@ use std::str;
 use uuid::Uuid;
 use zip::read::ZipArchive;
 
+pub mod post;
 pub mod downloader;
 pub mod minecraft_core;
 

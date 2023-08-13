@@ -1,13 +1,17 @@
 use crate::downloader::downloader;
 use crate::get_path;
+use crate::post::Post;
 use crate::write_to_file;
 use crossterm::cursor;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
 use crossterm::ExecutableCommand;
 use indicatif::ProgressBar;
+use log::Log;
 use reqwest::Error;
+use reqwest::header::HeaderMap;
 use serde_json::Value;
+use serde_json::json;
 use std::borrow::Borrow;
 use std::fs::create_dir_all;
 use std::io::stdout;
@@ -401,11 +405,7 @@ impl Launcher {
 
     /// 启动一个游戏。
     ///
-    /// `version`: 游戏版本号。
-    ///
-    /// `name`: 游戏自定义名称。
-    ///
-    /// `demo`: 是否是 demo 版。
+    /// `info`: 要启动的版本的信息
     ///
     /// 返回: `Ok()` 表示成功，`Err(str)` 表示失败，并返回一个字符串。
     ///
@@ -490,7 +490,7 @@ impl Launcher {
                     }
                 }
 
-                if (cfg!(windows) && available.0) || (cfg!(linux) && available.1) {
+                if (cfg!(windows) && available.0) || (cfg!(linux) && available.1) || (cfg!(osx) && available.2) {
                     return true;
                 }
 
@@ -651,8 +651,107 @@ impl Launcher {
             .args(arguments_string.split_whitespace().collect::<Vec<&str>>())
             .spawn()
         {
-            Ok(_) => Ok(()),
-            Err(error) => Err(error.to_string()),
+            Ok(_) => return Ok(()),
+            Err(error) => return Err(error.to_string()),
         }
+
+	Ok(())
+    }
+}
+
+pub struct Login {
+    logged: bool,
+    name: String,
+    uuid: String,
+    refresh_id: String,
+}
+
+impl Login {
+    pub fn new() -> Login {
+        Login {
+            logged: false,
+            name: String::new(),
+            uuid: String::new(),
+            refresh_id: String::new(),
+        }
+    }
+
+    pub async fn login_from_microsoft(code: String) -> Result<Login, reqwest::Error> {
+
+        let mut result = Login::new();
+
+        let mut headers = HeaderMap::new();
+        headers.insert("Content-Type", "application/x-www-form-urlencoded".parse().unwrap());
+
+        let data = json!({
+            "client_id": "00000000402b5328",
+            "code": &code,
+            "grant_type": "authorization_code",
+            "redirect_uri": "https://login.live.com/oauth20_desktop.srf",
+            "scope": "service::user.auth.xboxlive.com::MBI_SSL",
+        }).to_string();
+
+        let poster = Post::new();
+        let response = poster.post("https://login.live.com/oauth20_token.srf", headers, data).await?.json::<Value>().await?;
+        
+        println!("{:?}", json!({
+            "client_id": "00000000402b5328",
+            "code": &code,
+            "grant_type": "authorization_code",
+            "redirect_uri": "https://login.live.com/oauth20_desktop.srf",
+            "scope": "service::user.auth.xboxlive.com::MBI_SSL",
+        }).to_string());
+        
+        Ok(result)
+        // result.refresh_id = String::from(response["refresh_token"].as_str().unwrap());
+
+        // let mut headers = HeaderMap::new();
+        // headers.insert("Content-Type", "application/json".parse().unwrap());
+        // headers.insert("Accept", "application/json".parse().unwrap());
+
+        // let data = json!({
+        //     "Properties": {
+        //         "AuthMethod": "RPS",
+        //         "SiteName": "user.auth.xboxlive.com",
+        //         "RpsTicket": &format!("d={}", response["access_token"].as_str().unwrap()),
+        //     },
+        //     "RelyingParty": "http://auth.xboxlive.com",
+        //     "TokenType": "JWT",
+        // }).to_string();
+
+        // let response = poster.post("https://user.auth.xboxlive.com/user/authenticate", headers, data).await?.json::<Value>().await?;
+
+        // let uhs = response["DisplayClaims"]["xui"].as_array().unwrap()[0].as_str().unwrap();
+
+        // let mut headers = HeaderMap::new();
+        // headers.insert("Content-Type", "application/json".parse().unwrap());
+        // headers.insert("Accept", "application/json".parse().unwrap());
+
+        // let data = json!({
+        //     "Properties": {
+        //         "SandboxId": "RETAIL",
+        //         "UserTokens": [
+        //             response["Token"].as_str().unwrap()
+        //         ]
+        //     },
+        //     "RelyingParty": "rp://api.minecraftservices.com/",
+        //     "TokenType": "JWT"
+        // }).to_string();
+
+        // let response = poster.post("https://user.auth.xboxlive.com/user/authenticate", headers, data).await?.json::<Value>().await?;
+
+        // let mut headers = HeaderMap::new();
+        // headers.insert("Content-Type", "application/json".parse().unwrap());
+        // headers.insert("Accept", "application/json".parse().unwrap());
+
+        // let data = json!({
+        //     "identityToken": &format!("XBL3.0 x={};{}", uhs, response["Token"].as_str().unwrap())
+        // }).to_string();
+
+        // let response = poster.post("https://user.auth.xboxlive.com/user/authenticate", headers, data).await?.json::<Value>().await?;
+
+        // panic!("{}", response["access_token"].as_str().unwrap());
+
+        // Ok(result)
     }
 }
